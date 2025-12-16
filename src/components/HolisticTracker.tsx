@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import Webcam from 'react-webcam';
 import { Holistic, type Results } from '@mediapipe/holistic';
 import * as cam from '@mediapipe/camera_utils';
-import * as Kalidokit from 'kalidokit';
+import { Face, Pose, Hand } from 'kalidokit';
 
 interface HolisticTrackerProps {
     onPoseUpdate: (riggedPose: any) => void;
@@ -40,9 +40,6 @@ export const HolisticTracker: React.FC<HolisticTrackerProps> = ({ onPoseUpdate, 
                     minTrackingConfidence: 0.5,
                 });
 
-                // Safe import for Kalidokit
-                const KalidokitLib = (Kalidokit as any).default || Kalidokit;
-
                 holistic.onResults((results: Results) => {
                     if (!mounted) return;
 
@@ -66,7 +63,7 @@ export const HolisticTracker: React.FC<HolisticTrackerProps> = ({ onPoseUpdate, 
 
                     let poseRig = null;
                     try {
-                        poseRig = KalidokitLib.Pose.solve(results.poseLandmarks, pose3D, {
+                        poseRig = Pose.solve(results.poseLandmarks, pose3D, {
                             runtime: 'mediapipe',
                             video: webcamRef.current?.video,
                             enableLegs: false, // CRITICAL FIX: Ignore legs/hips to prevent errors in half-body view
@@ -79,7 +76,7 @@ export const HolisticTracker: React.FC<HolisticTrackerProps> = ({ onPoseUpdate, 
                     let faceRig = null;
                     if (results.faceLandmarks) {
                         try {
-                            faceRig = KalidokitLib.Face.solve(results.faceLandmarks, {
+                            faceRig = Face.solve(results.faceLandmarks, {
                                 runtime: 'mediapipe',
                                 video: webcamRef.current?.video
                             });
@@ -92,14 +89,14 @@ export const HolisticTracker: React.FC<HolisticTrackerProps> = ({ onPoseUpdate, 
                     let rightHandRig = null;
                     if (results.rightHandLandmarks) {
                         try {
-                            rightHandRig = KalidokitLib.Hand.solve(results.rightHandLandmarks, "Right");
+                            rightHandRig = Hand.solve(results.rightHandLandmarks, "Right");
                         } catch (e) { }
                     }
 
                     let leftHandRig = null;
                     if (results.leftHandLandmarks) {
                         try {
-                            leftHandRig = KalidokitLib.Hand.solve(results.leftHandLandmarks, "Left");
+                            leftHandRig = Hand.solve(results.leftHandLandmarks, "Left");
                         } catch (e) { }
                     }
 
