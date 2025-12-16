@@ -59,14 +59,14 @@ const BONE_MAP: Record<string, string> = {
     RightLittleDistal: 'RightHandPinky3',
 };
 
-// Smoothing values - higher = faster/more responsive, lower = smoother
+// Smoothing values - lower = smoother (less jitter), higher = faster
 const LERP = {
-    head: 0.25,     // رأس أكثر استجابة
-    neck: 0.2,      // رقبة
-    spine: 0.15,    // عمود فقري
-    arms: 0.2,      // ذراعين
-    hands: 0.3,     // يدين أكثر استجابة
-    face: 0.5,      // وجه سريع الاستجابة
+    head: 0.1,      // حركة رأس ناعمة جداً
+    neck: 0.08,     // حركة رقبة انسيابية
+    spine: 0.1,
+    arms: 0.15,
+    hands: 0.2,
+    face: 0.15,      // تعابير وجه ناعمة (بدون رفة)
 };
 
 // Simple loading box
