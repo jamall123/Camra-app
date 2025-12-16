@@ -72,12 +72,25 @@ export const HolisticTracker: React.FC<HolisticTrackerProps> = ({
             let leftHandRig = null;
 
             // Solve Pose
+            // Solve Pose
             try {
-                poseRig = Pose.solve(results.poseLandmarks, pose3D, {
-                    runtime: 'mediapipe',
-                    video: videoElement,
-                    enableLegs: false,
-                });
+                if (pose3D) {
+                    // Method 1: Standard argument order with enableLegs
+                    poseRig = Pose.solve(results.poseLandmarks, pose3D, {
+                        runtime: 'mediapipe',
+                        video: videoElement,
+                        enableLegs: true, // Critical for accurate upper body rotation
+                    });
+
+                    // Method 2: Fallback if first failed (sometimes arguments are swapped in different builds)
+                    if (!poseRig) {
+                        poseRig = Pose.solve(pose3D, results.poseLandmarks, {
+                            runtime: 'mediapipe',
+                            video: videoElement,
+                            enableLegs: true,
+                        });
+                    }
+                }
             } catch (e) {
                 console.warn('Pose solve error:', e);
             }
