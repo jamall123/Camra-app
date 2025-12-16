@@ -69,7 +69,7 @@ export const ImageAvatar: React.FC<ImageAvatarProps> = ({ headRotation, mouthOpe
         return mat;
     }, [texture]);
 
-    useFrame((state) => {
+    useFrame(() => {
         if (meshRef.current) {
             // Smoothly interpolate rotation
             // We dampen the values a bit for 2D because 1:1 rotation looks weird on a flat plane
