@@ -47,7 +47,14 @@ export const HolisticTracker: React.FC<HolisticTrackerProps> = ({
             }
 
             const videoElement = mode === 'camera' ? webcamRef.current?.video : videoRef.current;
-            const pose3D = (results as any).za || (results as any).ea;
+
+            // Extract 3D pose landmarks (MediaPipe obfuscates these keys, so we try multiple common ones)
+            const resultsAny = results as any;
+            const pose3D =
+                resultsAny.ea ||
+                resultsAny.za ||
+                resultsAny.DL ||
+                resultsAny.poseWorldLandmarks;
 
             let poseRig = null;
             let faceRig = null;

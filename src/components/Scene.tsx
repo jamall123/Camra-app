@@ -6,6 +6,25 @@ import type { Background } from '../types';
 
 // Bone name mapping: Kalidokit -> Mixamo/RPM
 const BONE_MAP: Record<string, string> = {
+    // Body (Spine & Hips)
+    Hips: 'Hips',
+    Spine: 'Spine',
+    Spine1: 'Spine1',
+    Spine2: 'Spine2',
+
+    // Arms (Left)
+    LeftArm: 'LeftArm',
+    LeftForeArm: 'LeftForeArm',
+    LeftHand: 'LeftHand',
+    LeftShoulder: 'LeftShoulder', // Clavicle
+
+    // Arms (Right)
+    RightArm: 'RightArm',
+    RightForeArm: 'RightForeArm',
+    RightHand: 'RightHand',
+    RightShoulder: 'RightShoulder', // Clavicle
+
+    // Left Hand Fingers
     LeftWrist: 'LeftHand',
     LeftThumbProximal: 'LeftHandThumb1',
     LeftThumbIntermediate: 'LeftHandThumb2',
@@ -96,8 +115,19 @@ const AvatarModel: React.FC<{ url: string; riggedPose: any }> = ({ url, riggedPo
     const getBone = (name: string): THREE.Bone | null => {
         const bones = bonesRef.current;
         const mapped = BONE_MAP[name] || name;
-        return bones[name] || bones[mapped] || bones[`mixamorig${name}`] ||
-            bones[`mixamorig${mapped}`] || bones[name.toLowerCase()] || null;
+
+        // Try explicit map first
+        if (bones[name]) return bones[name];
+        if (bones[mapped]) return bones[mapped];
+
+        // Try variations
+        return bones[`mixamorig${name}`] ||
+            bones[`mixamorig:${name}`] ||
+            bones[`mixamorig${mapped}`] ||
+            bones[`mixamorig:${mapped}`] ||
+            bones[name.toLowerCase()] ||
+            bones[mapped.toLowerCase()] ||
+            null;
     };
 
     // Safe rotation apply
