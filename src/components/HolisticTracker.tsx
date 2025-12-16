@@ -48,13 +48,23 @@ export const HolisticTracker: React.FC<HolisticTrackerProps> = ({
 
             const videoElement = mode === 'camera' ? webcamRef.current?.video : videoRef.current;
 
-            // Extract 3D pose landmarks (MediaPipe obfuscates these keys, so we try multiple common ones)
-            const resultsAny = results as any;
-            const pose3D =
-                resultsAny.ea ||
-                resultsAny.za ||
-                resultsAny.DL ||
-                resultsAny.poseWorldLandmarks;
+            // Dynamic search for 3D pose landmarks (MediaPipe keys change often: ea, za, DL, etc.)
+            const findPose3D = (res: any) => {
+                if (res.poseWorldLandmarks) return res.poseWorldLandmarks;
+                for (const key in res) {
+                    // Look for array that looks like 3D landmarks (has x, y, z, visibility)
+                    const val = res[key];
+                    if (Array.isArray(val) && val.length > 30 && val[0] &&
+                        typeof val[0].x === 'number' &&
+                        typeof val[0].z === 'number' &&
+                        'visibility' in val[0]) {
+                        return val;
+                    }
+                }
+                return null;
+            };
+
+            const pose3D = findPose3D(results);
 
             let poseRig = null;
             let faceRig = null;

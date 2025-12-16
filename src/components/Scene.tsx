@@ -183,14 +183,22 @@ const AvatarModel: React.FC<{ url: string; riggedPose: any }> = ({ url, riggedPo
 
         // Body
         if (pose) {
+            // Helper to find rotation from multiple keys
+            const getRot = (keys: string[]) => {
+                for (const k of keys) if ((pose as any)[k]) return (pose as any)[k];
+                return null;
+            };
+
             rotateBone('Spine', pose.Spine, LERP.spine);
             rotateBone('Spine1', pose.Spine1, LERP.spine);
             rotateBone('Spine2', pose.Spine2, LERP.spine);
             rotateBone('Hips', pose.Hips, LERP.spine);
-            rotateBone('RightArm', pose.RightArm, LERP.arms);
-            rotateBone('RightForeArm', pose.RightForeArm, LERP.arms);
-            rotateBone('LeftArm', pose.LeftArm, LERP.arms);
-            rotateBone('LeftForeArm', pose.LeftForeArm, LERP.arms);
+
+            // Arms (Support both naming conventions)
+            rotateBone('RightArm', getRot(['RightArm', 'RightUpperArm']), LERP.arms);
+            rotateBone('RightForeArm', getRot(['RightForeArm', 'RightLowerArm']), LERP.arms);
+            rotateBone('LeftArm', getRot(['LeftArm', 'LeftUpperArm']), LERP.arms);
+            rotateBone('LeftForeArm', getRot(['LeftForeArm', 'LeftLowerArm']), LERP.arms);
         }
 
         // Hands
