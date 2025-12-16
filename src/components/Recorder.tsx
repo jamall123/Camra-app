@@ -1,35 +1,67 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 
-export const Recorder: React.FC = () => {
+interface RecorderProps {
+    canvasSelector?: string;
+}
+
+export const Recorder: React.FC<RecorderProps> = ({
+    canvasSelector = '.canvas-container canvas',
+}) => {
     const [isRecording, setIsRecording] = useState(false);
+    const [duration, setDuration] = useState(0);
+    const [error, setError] = useState<string | null>(null);
+
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
+    const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
-    const startRecording = () => {
-        const canvas = document.querySelector('canvas');
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+            if (mediaRecorderRef.current?.state === 'recording') {
+                mediaRecorderRef.current.stop();
+            }
+        };
+    }, []);
+
+    // Format duration as MM:SS
+    const formatDuration = (seconds: number): string => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Get supported mime type
+    const getSupportedMimeType = (): string => {
+        const types = [
+            'video/webm;codecs=vp9',
+            'video/webm;codecs=vp8',
+            'video/webm',
+            'video/mp4',
+        ];
+        return types.find((type) => MediaRecorder.isTypeSupported(type)) || 'video/webm';
+    };
+
+    const startRecording = useCallback(() => {
+        const canvas = document.querySelector(canvasSelector) as HTMLCanvasElement;
+
         if (!canvas) {
-            console.error("Canvas not found for recording");
-            alert("خطأ: لم يتم العثور على مساحة الرسم للتسجيل.");
+            setError('لم يتم العثور على مساحة الرسم');
+            console.error('Canvas not found:', canvasSelector);
             return;
         }
 
         try {
-            // Capture stream from canvas (30 FPS)
+            setError(null);
             const stream = canvas.captureStream(30);
+            const mimeType = getSupportedMimeType();
 
-            // Detect supported mime type
-            const mimeTypes = [
-                'video/webm;codecs=vp9',
-                'video/webm;codecs=vp8',
-                'video/webm',
-                'video/mp4'
-            ];
-
-            const mimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || 'video/webm';
-            console.log(`Using mime type: ${mimeType}`);
+            console.log(`Recording with: ${mimeType}`);
 
             const mediaRecorder = new MediaRecorder(stream, {
-                mimeType: mimeType
+                mimeType,
+                videoBitsPerSecond: 5000000, // 5 Mbps for better quality
             });
 
             mediaRecorderRef.current = mediaRecorder;
@@ -42,65 +74,94 @@ export const Recorder: React.FC = () => {
             };
 
             mediaRecorder.onstop = () => {
+                if (timerRef.current) {
+                    clearInterval(timerRef.current);
+                }
+
                 if (chunksRef.current.length === 0) {
-                    console.warn("No data recorded");
-                    alert("لم يتم تسجيل أي بيانات. يرجى المحاولة مرة أخرى.");
+                    setError('لم يتم تسجيل أي بيانات');
                     return;
                 }
 
+                // Create and download video
                 const blob = new Blob(chunksRef.current, { type: mimeType });
                 const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                document.body.appendChild(a);
-                a.style.display = 'none';
-                a.href = url;
-                // Add timestamp to filename
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                a.download = `avatar-recording-${timestamp}.webm`;
-                a.click();
+                const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
+
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `avatar-recording-${timestamp}.${extension}`;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
 
                 // Cleanup
                 setTimeout(() => {
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
                 }, 100);
+
+                setDuration(0);
             };
 
-            mediaRecorder.start();
-            setIsRecording(true);
-        } catch (err) {
-            console.error("Error starting recording:", err);
-            alert("حدث خطأ أثناء بدء التسجيل. يرجى التحقق من المتصفح.");
-        }
-    };
+            mediaRecorder.onerror = (event: Event) => {
+                console.error('MediaRecorder error:', event);
+                setError('حدث خطأ أثناء التسجيل');
+                setIsRecording(false);
+            };
 
-    const stopRecording = () => {
+            // Start recording with timeslice for better chunk handling
+            mediaRecorder.start(1000);
+            setIsRecording(true);
+            setDuration(0);
+
+            // Start duration timer
+            timerRef.current = setInterval(() => {
+                setDuration((prev) => prev + 1);
+            }, 1000);
+        } catch (err) {
+            console.error('Recording start error:', err);
+            setError('فشل بدء التسجيل');
+        }
+    }, [canvasSelector]);
+
+    const stopRecording = useCallback(() => {
         if (mediaRecorderRef.current && isRecording) {
             mediaRecorderRef.current.stop();
             setIsRecording(false);
         }
-    };
+    }, [isRecording]);
 
     return (
-        <div className="recorder-controls">
+        <div className="recorder-container">
             {!isRecording ? (
                 <button
                     onClick={startRecording}
                     className="record-btn start"
-                    title="Start Recording"
+                    title="بدء التسجيل"
+                    aria-label="Start Recording"
                 >
-                    <div className="record-icon"></div>
+                    <div className="record-icon" />
                     <span>REC</span>
                 </button>
             ) : (
                 <button
                     onClick={stopRecording}
                     className="record-btn stop"
-                    title="Stop Recording"
+                    title="إيقاف التسجيل"
+                    aria-label="Stop Recording"
                 >
-                    <div className="stop-icon"></div>
-                    <span>STOP</span>
+                    <div className="stop-icon" />
+                    <span>{formatDuration(duration)}</span>
                 </button>
+            )}
+
+            {error && (
+                <div className="recorder-error">
+                    <span>{error}</span>
+                    <button onClick={() => setError(null)}>✕</button>
+                </div>
             )}
         </div>
     );

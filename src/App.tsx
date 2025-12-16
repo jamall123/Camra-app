@@ -2,35 +2,43 @@ import { useState, useCallback } from 'react';
 import { Scene } from './components/Scene';
 import { HolisticTracker } from './components/HolisticTracker';
 import { AvatarGallery } from './components/AvatarGallery';
-import { WelcomeMessage } from './components/WelcomeMessage';
 import { Recorder } from './components/Recorder';
+import { BackgroundPicker } from './components/BackgroundPicker';
 import { BACKGROUNDS } from './data';
+import type { TrackingStatus, Background, AppMode } from './types';
+
+import './App.css';
 
 function App() {
-  const [currentBg, setCurrentBg] = useState(BACKGROUNDS[0]);
+  // State
+  const [currentBg, setCurrentBg] = useState<Background>(BACKGROUNDS[0]);
   const [riggedPose, setRiggedPose] = useState<any>(null);
-  const [showInput, setShowInput] = useState(false);
-
-  // State for Tracking Status
-  const [trackingStatus, setTrackingStatus] = useState({ face: false, pose: false, hands: false });
-
-  // Default Avatar
-  const [modelUrl, setModelUrl] = useState("https://models.readyplayer.me/693fd189fe6f676b663eef96.glb");
+  const [trackingStatus, setTrackingStatus] = useState<TrackingStatus>({
+    face: false,
+    pose: false,
+    hands: false,
+  });
+  const [mode, setMode] = useState<AppMode>('camera');
+  const [modelUrl, setModelUrl] = useState(
+    'https://models.readyplayer.me/693fd189fe6f676b663eef96.glb'
+  );
+  const [showUrlInput, setShowUrlInput] = useState(false);
   const [inputUrl, setInputUrl] = useState(modelUrl);
 
+  // Handlers
   const handlePoseUpdate = useCallback((pose: any) => {
     setRiggedPose(pose);
   }, []);
 
-  const handleTrackingUpdate = useCallback((status: { face: boolean; pose: boolean; hands: boolean }) => {
+  const handleTrackingUpdate = useCallback((status: TrackingStatus) => {
     setTrackingStatus(status);
   }, []);
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (inputUrl.trim()) {
-      setModelUrl(inputUrl);
-      setShowInput(false);
+      setModelUrl(inputUrl.trim());
+      setShowUrlInput(false);
     }
   };
 
@@ -39,78 +47,106 @@ function App() {
     setInputUrl(url);
   };
 
+  const handleBackgroundChange = (bg: Background) => {
+    setCurrentBg(bg);
+  };
+
   return (
-    <main>
+    <main className="app-container">
+      {/* 3D Scene */}
       <div className="canvas-container">
-        <Scene
-          background={currentBg.color}
-          riggedPose={riggedPose}
-          modelUrl={modelUrl}
-        />
+        <Scene background={currentBg} riggedPose={riggedPose} modelUrl={modelUrl} />
       </div>
 
-      {!modelUrl && <WelcomeMessage />}
-
-      {/* Logic Components */}
+      {/* Tracking Component */}
       <HolisticTracker
         onPoseUpdate={handlePoseUpdate}
         onTrackingStatus={handleTrackingUpdate}
+        mode={mode}
       />
 
-      {/* --- Visual Tracking Indicators --- */}
+      {/* Tracking Status Indicators */}
       <div className="tracking-status">
-        <div className={`status-dot ${trackingStatus.face ? 'active' : ''}`} title="Face Detected">😐</div>
-        <div className={`status-dot ${trackingStatus.hands ? 'active' : ''}`} title="Hands Detected">✋</div>
-        <div className={`status-dot ${trackingStatus.pose ? 'active' : ''}`} title="Body Detected">🕺</div>
+        <div
+          className={`status-dot ${trackingStatus.face ? 'active' : ''}`}
+          title="Face Detected"
+        >
+          😐
+        </div>
+        <div
+          className={`status-dot ${trackingStatus.hands ? 'active' : ''}`}
+          title="Hands Detected"
+        >
+          ✋
+        </div>
+        <div
+          className={`status-dot ${trackingStatus.pose ? 'active' : ''}`}
+          title="Body Detected"
+        >
+          🕺
+        </div>
       </div>
 
+      {/* Mode Toggle (Camera / Video) */}
+      <div className="mode-toggle">
+        <button
+          className={`mode-btn ${mode === 'camera' ? 'active' : ''}`}
+          onClick={() => setMode('camera')}
+          title="استخدام الكاميرا"
+        >
+          📷 كاميرا
+        </button>
+        <button
+          className={`mode-btn ${mode === 'video' ? 'active' : ''}`}
+          onClick={() => setMode('video')}
+          title="رفع فيديو"
+        >
+          📁 فيديو
+        </button>
+      </div>
+
+      {/* Recording Controls */}
       <Recorder />
 
-      <AvatarGallery
-        onSelectAvatar={handleSelectAvatar}
-        currentAvatarUrl={modelUrl}
+      {/* Avatar Gallery */}
+      <AvatarGallery onSelectAvatar={handleSelectAvatar} currentAvatarUrl={modelUrl} />
+
+      {/* Background Picker */}
+      <BackgroundPicker
+        currentBackground={currentBg}
+        onBackgroundChange={handleBackgroundChange}
       />
 
-      {/* --- UI CONTROLS --- */}
-
-      {/* 1. Custom Link Button */}
+      {/* Custom URL Input Button */}
       <button
         className="icon-button link-button"
-        onClick={() => setShowInput(!showInput)}
-        title="Load Custom GLB URL"
+        onClick={() => setShowUrlInput(!showUrlInput)}
+        title="تحميل رابط GLB مخصص"
       >
         🔗
       </button>
 
-      {/* 2. Collapsible URL Input */}
-      <div className={`model-url-input ${showInput ? 'visible' : ''}`}>
+      {/* URL Input Form */}
+      <div className={`model-url-input ${showUrlInput ? 'visible' : ''}`}>
         <form onSubmit={handleUrlSubmit}>
           <input
-            type="text"
+            type="url"
             value={inputUrl}
             onChange={(e) => setInputUrl(e.target.value)}
-            placeholder="Paste RPM GLB URL..."
+            placeholder="الصق رابط GLB هنا..."
           />
-          <button type="submit">Go</button>
-          <button type="button" className="close-btn" onClick={() => setShowInput(false)}>×</button>
-        </form>
-      </div>
-
-      {/* 3. Background Switcher */}
-      <div className="ui-overlay">
-        {BACKGROUNDS.map((bg) => (
+          <button type="submit">تحميل</button>
           <button
-            key={bg.id}
-            className={`ui-button ${currentBg.id === bg.id ? 'active' : ''}`}
-            onClick={() => setCurrentBg(bg)}
-            style={{ backgroundColor: bg.color }}
-            title={bg.name}
-          />
-        ))}
+            type="button"
+            className="close-btn"
+            onClick={() => setShowUrlInput(false)}
+          >
+            ✕
+          </button>
+        </form>
       </div>
     </main>
   );
 }
 
 export default App;
-

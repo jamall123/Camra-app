@@ -1,19 +1,11 @@
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, useGLTF, Html } from '@react-three/drei';
-import React, { Suspense, useRef, useEffect } from 'react';
+import { OrbitControls, useGLTF, useTexture } from '@react-three/drei';
+import React, { Suspense, useRef, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
+import type { Background } from '../types';
 
-// Fallback box if model fails or is loading
-const BoxAvatar = ({ headRotation }: { headRotation?: [number, number, number] }) => (
-    <mesh rotation={[headRotation?.[0] || 0, headRotation?.[1] || 0, headRotation?.[2] || 0]}>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial color="#FF69B4" />
-    </mesh>
-);
-
-// Helper map for Kalidokit -> Mixamo/RPM bone names
-const KalidokitToMixamo: Record<string, string> = {
-    // Left Hand
+// Bone name mapping: Kalidokit -> Mixamo/RPM
+const BONE_MAP: Record<string, string> = {
     LeftWrist: 'LeftHand',
     LeftThumbProximal: 'LeftHandThumb1',
     LeftThumbIntermediate: 'LeftHandThumb2',
@@ -30,8 +22,6 @@ const KalidokitToMixamo: Record<string, string> = {
     LeftLittleProximal: 'LeftHandPinky1',
     LeftLittleIntermediate: 'LeftHandPinky2',
     LeftLittleDistal: 'LeftHandPinky3',
-
-    // Right Hand
     RightWrist: 'RightHand',
     RightThumbProximal: 'RightHandThumb1',
     RightThumbIntermediate: 'RightHandThumb2',
@@ -50,191 +40,197 @@ const KalidokitToMixamo: Record<string, string> = {
     RightLittleDistal: 'RightHandPinky3',
 };
 
-const AvatarModel = ({ url, riggedPose }: { url: string, riggedPose: any }) => {
-    const { scene } = useGLTF(url);
-    const nodesRef = useRef<any>(null);
+// Smoothing values - higher = faster/more responsive, lower = smoother
+const LERP = {
+    head: 0.25,     // رأس أكثر استجابة
+    neck: 0.2,      // رقبة
+    spine: 0.15,    // عمود فقري
+    arms: 0.2,      // ذراعين
+    hands: 0.3,     // يدين أكثر استجابة
+    face: 0.5,      // وجه سريع الاستجابة
+};
 
-    // Map graph nodes once
+// Simple loading box
+const LoadingBox = () => (
+    <mesh>
+        <boxGeometry args={[0.8, 0.8, 0.8]} />
+        <meshStandardMaterial color="#646cff" wireframe />
+    </mesh>
+);
+
+// Helper to check if value is valid number
+const isValid = (v: any): v is number => typeof v === 'number' && isFinite(v);
+
+// Clamp to range
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+
+// Avatar Model Component
+const AvatarModel: React.FC<{ url: string; riggedPose: any }> = ({ url, riggedPose }) => {
+    const { scene } = useGLTF(url);
+    const bonesRef = useRef<Record<string, THREE.Bone>>({});
+    const headMeshRef = useRef<THREE.SkinnedMesh | null>(null);
+
+    // Build bone map once when scene loads
     useEffect(() => {
-        const nodes: any = {};
+        const bones: Record<string, THREE.Bone> = {};
         const normalize = (name: string) => name.toLowerCase().replace(/mixamorig|:|_+/g, '');
 
-        // Log all bones once for debugging
-        const allBoneNames: string[] = [];
-
         scene.traverse((obj) => {
             if (obj instanceof THREE.Bone) {
-                nodes[obj.name] = obj;
-                nodes[normalize(obj.name)] = obj;
-                allBoneNames.push(obj.name);
+                bones[obj.name] = obj;
+                bones[normalize(obj.name)] = obj;
             }
-            if ((obj as THREE.Mesh).isMesh) {
-                nodes[obj.name] = obj;
+            if ((obj as THREE.SkinnedMesh).isSkinnedMesh) {
+                const mesh = obj as THREE.SkinnedMesh;
+                if (mesh.morphTargetDictionary &&
+                    (mesh.name.includes('Head') || mesh.name.includes('Face') || mesh.name === 'Wolf3D_Head')) {
+                    headMeshRef.current = mesh;
+                }
             }
         });
 
-        console.log("Avatar Bones Detected:", allBoneNames);
-        nodesRef.current = nodes;
+        bonesRef.current = bones;
     }, [scene]);
+
+    // Find bone by name with fallbacks
+    const getBone = (name: string): THREE.Bone | null => {
+        const bones = bonesRef.current;
+        const mapped = BONE_MAP[name] || name;
+        return bones[name] || bones[mapped] || bones[`mixamorig${name}`] ||
+            bones[`mixamorig${mapped}`] || bones[name.toLowerCase()] || null;
+    };
+
+    // Safe rotation apply
+    const rotateBone = (name: string, rot: any, lerp: number) => {
+        if (!rot) return;
+        const bone = getBone(name);
+        if (!bone) return;
+
+        if (isValid(rot.x)) bone.rotation.x = THREE.MathUtils.lerp(bone.rotation.x, clamp(rot.x, -Math.PI, Math.PI), lerp);
+        if (isValid(rot.y)) bone.rotation.y = THREE.MathUtils.lerp(bone.rotation.y, clamp(rot.y, -Math.PI, Math.PI), lerp);
+        if (isValid(rot.z)) bone.rotation.z = THREE.MathUtils.lerp(bone.rotation.z, clamp(rot.z, -Math.PI, Math.PI), lerp);
+    };
+
+    // Safe morph apply
+    const setMorph = (name: string, value: any, lerp: number) => {
+        const mesh = headMeshRef.current;
+        if (!mesh?.morphTargetInfluences || !mesh?.morphTargetDictionary) return;
+        if (!isValid(value)) return;
+
+        const idx = mesh.morphTargetDictionary[name];
+        if (idx !== undefined) {
+            mesh.morphTargetInfluences[idx] = THREE.MathUtils.lerp(
+                mesh.morphTargetInfluences[idx],
+                clamp(value, 0, 1),
+                lerp
+            );
+        }
+    };
 
     useFrame(() => {
-        if (!riggedPose || !nodesRef.current) return;
+        if (!riggedPose) return;
 
-        const nodes = nodesRef.current;
         const { face, pose, rightHand, leftHand } = riggedPose;
 
-        // Helper: Rotate bone if found with smoother lerp
-        const rotateBone = (name: string, rot: { x: number, y: number, z: number }, lerp = 0.1) => {
-            // Try exact name, mapped name, or normalized variants
-            const mappedName = KalidokitToMixamo[name] || name;
-
-            const bone = nodes[name] ||
-                nodes[mappedName] ||
-                nodes['mixamorig' + name] ||
-                nodes['mixamorig' + mappedName] ||
-                nodes[name.toLowerCase()] ||
-                nodes[mappedName.toLowerCase()] ||
-                nodes[name.toLowerCase().replace(/mixamorig|:|_+/g, '')];
-
-            if (bone) {
-                bone.rotation.x = THREE.MathUtils.lerp(bone.rotation.x, rot.x, lerp);
-                bone.rotation.y = THREE.MathUtils.lerp(bone.rotation.y, rot.y, lerp);
-                bone.rotation.z = THREE.MathUtils.lerp(bone.rotation.z, rot.z, lerp);
-            }
-        };
-
-        // --- 1. HEAD & FACE (Very Smooth) ---
-        if (face && face.head) {
-            rotateBone('Head', { x: -face.head.x, y: face.head.y, z: face.head.z }, 0.15);
-            rotateBone('Neck', { x: -face.head.x * 0.5, y: face.head.y * 0.5, z: face.head.z * 0.5 }, 0.1);
+        // Head & Neck
+        if (face?.head) {
+            rotateBone('Head', { x: -face.head.x, y: face.head.y, z: face.head.z }, LERP.head);
+            rotateBone('Neck', { x: -face.head.x * 0.5, y: face.head.y * 0.5, z: face.head.z * 0.5 }, LERP.neck);
         }
 
-        // MorphTargets (Blinking, Smile, Mouth) - Faster response for face
-        const headMesh = nodes.Wolf3D_Head || nodes.Head_2 || Object.values(nodes).find((n: any) => n.morphTargetDictionary && (n.name.includes('Head') || n.name.includes('Face')));
-
-        if (headMesh && headMesh.morphTargetInfluences && headMesh.morphTargetDictionary && face) {
-            // Blink
+        // Face morphs
+        if (face) {
             if (face.eye) {
-                const lIdx = headMesh.morphTargetDictionary['eyeBlinkLeft'];
-                const rIdx = headMesh.morphTargetDictionary['eyeBlinkRight'];
-                if (lIdx !== undefined && face.eye.r !== undefined) headMesh.morphTargetInfluences[lIdx] = THREE.MathUtils.lerp(headMesh.morphTargetInfluences[lIdx], 1 - face.eye.r, 0.5);
-                if (rIdx !== undefined && face.eye.l !== undefined) headMesh.morphTargetInfluences[rIdx] = THREE.MathUtils.lerp(headMesh.morphTargetInfluences[rIdx], 1 - face.eye.l, 0.5);
+                setMorph('eyeBlinkLeft', 1 - (face.eye.r || 1), LERP.face);
+                setMorph('eyeBlinkRight', 1 - (face.eye.l || 1), LERP.face);
             }
-
-            // Mouth Shape
-            if (face.mouth && face.mouth.shape) {
-                const mouthOpenIndex = headMesh.morphTargetDictionary['mouthOpen'] ?? headMesh.morphTargetDictionary['jawOpen'];
-                if (mouthOpenIndex !== undefined) headMesh.morphTargetInfluences[mouthOpenIndex] = THREE.MathUtils.lerp(headMesh.morphTargetInfluences[mouthOpenIndex], face.mouth.shape.A, 0.5);
-
-                const mouthSmileIndex = headMesh.morphTargetDictionary['mouthSmile'];
-                if (mouthSmileIndex !== undefined) headMesh.morphTargetInfluences[mouthSmileIndex] = THREE.MathUtils.lerp(headMesh.morphTargetInfluences[mouthSmileIndex], face.mouth.shape.E * 0.5, 0.5);
+            if (face.mouth?.shape) {
+                setMorph('mouthOpen', face.mouth.shape.A, LERP.face);
+                setMorph('jawOpen', face.mouth.shape.A, LERP.face);
+                setMorph('mouthSmile', (face.mouth.shape.E || 0) * 0.5, LERP.face);
             }
         }
 
-        // --- 2. BODY POSE (Spine/Chest) ---
+        // Body
         if (pose) {
-            if (pose.Spine) rotateBone('Spine', pose.Spine, 0.1);
-            if (pose.Spine1) rotateBone('Spine1', pose.Spine1, 0.1);
-            if (pose.Spine2) rotateBone('Spine2', pose.Spine2, 0.1);
-            if (pose.Hips) rotateBone('Hips', pose.Hips, 0.1);
+            rotateBone('Spine', pose.Spine, LERP.spine);
+            rotateBone('Spine1', pose.Spine1, LERP.spine);
+            rotateBone('Spine2', pose.Spine2, LERP.spine);
+            rotateBone('Hips', pose.Hips, LERP.spine);
+            rotateBone('RightArm', pose.RightArm, LERP.arms);
+            rotateBone('RightForeArm', pose.RightForeArm, LERP.arms);
+            rotateBone('LeftArm', pose.LeftArm, LERP.arms);
+            rotateBone('LeftForeArm', pose.LeftForeArm, LERP.arms);
         }
 
-        // --- 3. ARMS & HANDS (Smoother) ---
-        // Right Side
-        if (pose && pose.RightArm) rotateBone('RightArm', pose.RightArm, 0.1);
-        if (pose && pose.RightForeArm) rotateBone('RightForeArm', pose.RightForeArm, 0.1);
-
-        // Right Hand & Fingers
+        // Hands
         if (rightHand) {
-            Object.keys(rightHand).forEach(key => {
-                rotateBone(key, rightHand[key], 0.25);
-            });
+            Object.entries(rightHand).forEach(([key, rot]) => rotateBone(key, rot, LERP.hands));
         }
-
-        // Left Side
-        if (pose && pose.LeftArm) rotateBone('LeftArm', pose.LeftArm, 0.1);
-        if (pose && pose.LeftForeArm) rotateBone('LeftForeArm', pose.LeftForeArm, 0.1);
-
-        // Left Hand & Fingers
         if (leftHand) {
-            Object.keys(leftHand).forEach(key => {
-                rotateBone(key, leftHand[key], 0.25);
-            });
+            Object.entries(leftHand).forEach(([key, rot]) => rotateBone(key, rot, LERP.hands));
         }
-
     });
 
-    const [debugInfo, setDebugInfo] = React.useState<{ bones: string[] }>({ bones: [] });
+    return <primitive object={scene} position={[0, -2.1, 0]} scale={1.35} />;
+};
 
-    // One-time bone logging for on-screen debug
-    useEffect(() => {
-        if (!scene) return;
-        const allBones: string[] = [];
-        scene.traverse((obj) => {
-            if (obj instanceof THREE.Bone) {
-                allBones.push(obj.name);
-            }
-        });
-        setDebugInfo({ bones: allBones });
-    }, [scene]);
-
-    // Render Debug Overlay
+// Background Plane for custom images
+const BackgroundPlane: React.FC<{ imageUrl: string }> = ({ imageUrl }) => {
+    const texture = useTexture(imageUrl);
     return (
-        <group>
-            <primitive object={scene} position={[0, -2.1, 0]} scale={1.35} />
-            <Html position={[-1, 1.5, 0]}>
-                <div style={{
-                    background: 'rgba(0,0,0,0.8)',
-                    color: 'white',
-                    padding: '10px',
-                    borderRadius: '5px',
-                    fontSize: '10px',
-                    width: '200px',
-                    fontFamily: 'monospace',
-                    pointerEvents: 'none',
-                    textAlign: 'left' // Ensure text is left-aligned for readability
-                }}>
-                    <h3 style={{ margin: '0 0 5px 0', borderBottom: '1px solid #555' }}>Diagnostic Panel</h3>
-                    <div><strong>Face:</strong> {riggedPose?.face ? '✅ Found' : '❌ Searching...'}</div>
-                    <div><strong>Pose:</strong> {riggedPose?.pose ? '✅ Found' : '❌ Searching...'}</div>
-                    <div><strong>R.Hand:</strong> {riggedPose?.rightHand ? '✅ Found' : '❌ Searching...'}</div>
-                    <div><strong>L.Hand:</strong> {riggedPose?.leftHand ? '✅ Found' : '❌ Searching...'}</div>
-                    <div style={{ marginTop: '5px', borderTop: '1px solid #555', paddingTop: '5px' }}>
-                        <strong>Detected Bones ({debugInfo.bones.length}):</strong>
-                        <div style={{ maxHeight: '100px', overflowY: 'auto' }}>
-                            {debugInfo.bones.length > 0 ? debugInfo.bones.slice(0, 15).map(b => (
-                                <div key={b}>- {b}</div>
-                            )) : 'No bones found!'}
-                            {debugInfo.bones.length > 15 && <div>...and {debugInfo.bones.length - 15} more</div>}
-                        </div>
-                    </div>
-                </div>
-            </Html>
-        </group>
+        <mesh position={[0, 0, -5]} scale={[16, 9, 1]}>
+            <planeGeometry />
+            <meshBasicMaterial map={texture} />
+        </mesh>
     );
 };
 
+// Scene Component
 interface SceneProps {
-    background: string;
+    background: Background;
     riggedPose: any;
     modelUrl: string;
 }
 
 export const Scene: React.FC<SceneProps> = ({ background, riggedPose, modelUrl }) => {
+    const bgColor = useMemo(() => background.color, [background.color]);
+
     return (
-        // Adjusted Camera FOV for a closer "Portrait" shot
-        <Canvas camera={{ position: [0, 0.2, 1.8], fov: 45 }}>
-            <color attach="background" args={[background]} />
+        <Canvas
+            camera={{ position: [0, 0.2, 1.8], fov: 45 }}
+            gl={{ preserveDrawingBuffer: true, antialias: true }}
+        >
+            {/* Background */}
+            {background.imageUrl ? (
+                <Suspense fallback={<color attach="background" args={[bgColor]} />}>
+                    <BackgroundPlane imageUrl={background.imageUrl} />
+                </Suspense>
+            ) : (
+                <color attach="background" args={[bgColor]} />
+            )}
+
+            {/* Lighting */}
             <ambientLight intensity={1.0} />
             <directionalLight position={[5, 5, 5]} intensity={0.5} />
+            <directionalLight position={[-5, 3, 2]} intensity={0.3} />
+
+            {/* Avatar */}
             {modelUrl ? (
-                <Suspense fallback={<BoxAvatar />}>
+                <Suspense fallback={<LoadingBox />}>
                     <AvatarModel url={modelUrl} riggedPose={riggedPose} />
                 </Suspense>
             ) : (
-                <BoxAvatar />
+                <LoadingBox />
             )}
-            <OrbitControls enableZoom={false} target={[0, 0, 0]} />
+
+            <OrbitControls
+                enableZoom={true}
+                enablePan={false}
+                target={[0, 0, 0]}
+                maxDistance={5}
+                minDistance={1}
+            />
         </Canvas>
     );
 };
