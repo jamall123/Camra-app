@@ -24,7 +24,7 @@ const BONE_MAP: Record<string, string> = {
     RightHand: 'RightHand',
     RightShoulder: 'RightShoulder', // Clavicle
 
-    // Left Hand Fingers
+    // Left Hand
     LeftWrist: 'LeftHand',
     LeftThumbProximal: 'LeftHandThumb1',
     LeftThumbIntermediate: 'LeftHandThumb2',
@@ -108,6 +108,11 @@ const AvatarModel: React.FC<{ url: string; riggedPose: any }> = ({ url, riggedPo
             }
         });
 
+        // Debug: Print all bone names
+        console.log('--- AVATAR BONES LIST ---');
+        Object.keys(bones).forEach(b => console.log(b));
+        console.log('-------------------------');
+
         bonesRef.current = bones;
     }, [scene]);
 
@@ -157,8 +162,17 @@ const AvatarModel: React.FC<{ url: string; riggedPose: any }> = ({ url, riggedPo
         }
     };
 
-    useFrame(() => {
+    useFrame((state) => {
         if (!riggedPose) return;
+
+        // Debug: Check pose data for Arms
+        if (Math.floor(state.clock.getElapsedTime() * 10) % 50 === 0) { // Every ~5 seconds
+            if (riggedPose.pose) {
+                console.log('--- DEBUG POSE ---');
+                console.log('Right Arm Bone:', getBone('RightArm')?.name || 'NOT FOUND');
+                console.log('Right Arm Value:', riggedPose.pose.RightArm || riggedPose.pose.RightUpperArm || 'MISSING');
+            }
+        }
 
         const { face, pose, rightHand, leftHand } = riggedPose;
 
@@ -183,22 +197,14 @@ const AvatarModel: React.FC<{ url: string; riggedPose: any }> = ({ url, riggedPo
 
         // Body
         if (pose) {
-            // Helper to find rotation from multiple keys
-            const getRot = (keys: string[]) => {
-                for (const k of keys) if ((pose as any)[k]) return (pose as any)[k];
-                return null;
-            };
-
             rotateBone('Spine', pose.Spine, LERP.spine);
             rotateBone('Spine1', pose.Spine1, LERP.spine);
             rotateBone('Spine2', pose.Spine2, LERP.spine);
             rotateBone('Hips', pose.Hips, LERP.spine);
-
-            // Arms (Support both naming conventions)
-            rotateBone('RightArm', getRot(['RightArm', 'RightUpperArm']), LERP.arms);
-            rotateBone('RightForeArm', getRot(['RightForeArm', 'RightLowerArm']), LERP.arms);
-            rotateBone('LeftArm', getRot(['LeftArm', 'LeftUpperArm']), LERP.arms);
-            rotateBone('LeftForeArm', getRot(['LeftForeArm', 'LeftLowerArm']), LERP.arms);
+            rotateBone('RightArm', pose.RightArm, LERP.arms);
+            rotateBone('RightForeArm', pose.RightForeArm, LERP.arms);
+            rotateBone('LeftArm', pose.LeftArm, LERP.arms);
+            rotateBone('LeftForeArm', pose.LeftForeArm, LERP.arms);
         }
 
         // Hands
